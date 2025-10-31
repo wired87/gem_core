@@ -1,8 +1,5 @@
 import os
-
-import ray
 from google import genai
-
 
 import dotenv
 dotenv.load_dotenv()
@@ -15,17 +12,22 @@ class Gem:
             api_key=os.environ.get("GEMINI_API_KEY")
         )
         print("GEMW INITIALIZED")
+        self.max_try =10
 
-
-    def ask(self, content):
+    def ask(self, content, config:dict=None):
         print("================== ASK GEM ===============")
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=content,
-        )
-        text = response.text
-        obj_ref = ray.put(text)
-        return obj_ref
+        for i in range(self.max_try):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=content,
+                    config=config if config else {},
+                )
+                text = response.text
+                return text
+            except Exception as e:
+                print("ERR REQUEST", e)
+
 
     def ask_mm(self, file_content_str:str, prompt:str):
         print("================== ASK GEM MultiModal ===============")
@@ -39,5 +41,4 @@ class Gem:
             ],
         )
         text = response.text
-        obj_ref = ray.put(text)
-        return obj_ref
+        return text
