@@ -1,3 +1,3 @@
-from google import genai
+import os
 
-GAIC=genai.Client()
+GEMINI_API_KEY=os.environ.get("GEMINI_API_KEY")
