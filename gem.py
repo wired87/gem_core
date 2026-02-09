@@ -29,16 +29,14 @@ class Gem:
                 print("ERR REQUEST", e)
 
 
-    def ask_mm(self, file_content_str:str, prompt:str):
+    def ask_mm(self, file_content_str: str, prompt: str, config: dict = None):
+        """Multimodal: file (PDF/image) + prompt. config can include response_mime_type, response_json_schema for structured output."""
         print("================== ASK GEM MultiModal ===============")
-        print("file_content_str", file_content_str)
-        print("prompt", prompt)
+        cfg = dict(config) if config else {}
         response = self.client.models.generate_content(
             model=self.model,
-            contents=[
-                file_content_str,
-                prompt,
-            ],
+            contents=[file_content_str, prompt],
+            config=cfg,
         )
         text = response.text
         return text
