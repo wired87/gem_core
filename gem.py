@@ -6,7 +6,7 @@ dotenv.load_dotenv()
 
 class Gem:
 
-    def __init__(self, model="gemini-2.5-flash"):
+    def __init__(self, model="gemini-2.0-flash"):
         self.model = model
         self.client = genai.Client(
             api_key=os.environ.get("GEMINI_API_KEY")
