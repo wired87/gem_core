@@ -286,3 +286,154 @@ class GoogleIntelligent:
             top_k=top_k,
             response_schema=response_schema,
         )
+
+    def _generate_embedding(self, text: str) -> List[float]:
+        """
+        Generate embedding for text using Google GenAI.
+        """
+        if not self.genai_client:
+            return []
+
+        try:
+            # Using text-embedding-004 as standard embedding model
+            result = self.genai_client.models.embed_content(
+                model="text-embedding-004",
+                contents=text,
+            )
+            return result.embeddings[0].values
+        except Exception as e:
+            print(f"Error generating embedding: {e}")
+            return []
+
+    def _generate_description(self, item: Dict[str, Any], table_name: str) -> str:
+        """
+        Generate a short description for an item using Google GenAI.
+        """
+        if not self.genai_client:
+            return ""
+
+        try:
+            # Find manager info for context
+            manager_desc = "Unknown Table"
+            for info in self.MANAGERS_INFO:
+                if info.get("default_table") == table_name:
+                    manager_desc = info.get("description", "")
+                    break
+
+            # Construct prompt
+            item_str = json.dumps({k: v for k, v in item.items() if k not in ["embedding", "binary_data"]}, default=str)
+            prompt = f"""
+            Generate a concise description (max 300 chars) for this database item.
+
+            Context:
+            Table: {table_name}
+            Table Purpose: {manager_desc}
+
+            Item Data:
+            {item_str}
+
+            Description:
+            """
+
+            response = self.genai_client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=prompt
+            )
+            return response.text.strip()[:300]
+        except Exception as e:
+            print(f"Error generating description: {e}")
+            return ""
+
+    def intelligent_extraction(
+            self,
+            prompt: str,
+            content: str | bytes,
+            schema_source: str | Dict[str, Any],
+            manager_prompt_ext: str = "",
+            user_id: Optional[str] = None,
+            data_key: str = "items",
+    ) -> Dict[str, Any] | List[Dict[str, Any]]:
+        """
+        Extract structured content using Gemini with schema from table param or dict.
+        Returns raw parsed payload for manager.intelligent_processor.
+        """
+        if not self.genai_client:
+            from qbrain.gem_core.gem import Gem
+            gem = Gem()
+            use_gem = True
+        else:
+            gem = None
+            use_gem = False
+
+        # Resolve schema from schema_source
+        struct = None
+        if isinstance(schema_source, dict):
+            struct = schema_source
+        elif isinstance(schema_source, str):
+            rows = self.row_from_id([schema_source], "params", user_id=user_id)
+            if rows:
+                row = rows[0]
+                for field in ("shape", "axis_def", "description"):
+                    val = row.get(field)
+                    if isinstance(val, str):
+                        try:
+                            struct = json.loads(val)
+                            if isinstance(struct, dict):
+                                break
+                        except json.STRINGDecodeError:
+                            pass
+                    elif isinstance(val, dict):
+                        struct = val
+                        break
+            if struct is None:
+                struct = {}
+
+        if struct is None:
+            struct = {}
+
+        json_schema = self._key_type_struct_to_json_schema(struct, data_key=data_key)
+        json_schema = self._schema_to_genai(json_schema)
+
+        content_str = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)
+        full_prompt = f"""{manager_prompt_ext}
+
+        User instructions: {prompt or 'Extract all relevant content.'}
+
+        Content:
+        {content_str}
+
+        Generate a STRING object with a "{data_key}" array. Each item must match the schema exactly.
+        Return only valid STRING, no markdown or extra text."""
+
+        config = {
+            "response_mime_type": "application/json",
+            "response_json_schema": json_schema,
+        }
+
+        try:
+            if use_gem and gem:
+                response = gem.ask(full_prompt, config=config)
+            else:
+                response = self.genai_client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=full_prompt,
+                    config=config,
+                )
+                response = response.text if hasattr(response, "text") else str(response)
+
+            text = (response or "").strip().replace("```json", "").replace("```", "").strip()
+            parsed = json.loads(text)
+            items = parsed.get(data_key, parsed) if isinstance(parsed, dict) else parsed
+            result = items if isinstance(items, list) else [items] if items else []
+            print(f"{_QBRAIN_DEBUG} intelligent_extraction: done -> {len(result)} item(s)")
+            return result
+        except Exception as e:
+            print(f"{_QBRAIN_DEBUG} intelligent_extraction error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+
+
+
+
+
