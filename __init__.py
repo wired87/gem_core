@@ -30,14 +30,38 @@ class Gem:
         print(f"[Gem] Initialized with model={model}, API key present (length={len(api_key)})")
         self.max_try = 10
 
-    def ask(self, content, config:dict=None):
+    async def aask_gem(self, content):
+        print("================== ASK GEM ASYNC ===============")
+        for i in range(self.max_try):
+            try:
+                response: types.GenerateContentResponse = await self.client.aio.models.generate_content(
+                    model=self.model,
+                    contents=content,
+                )
+                text = response.text
+                print(f"[Gem] ask: success, response_length={text}")
+
+                if response.usage_metadata and response.usage_metadata.total_token_count:
+                    self.token_count += response.usage_metadata.total_token_count
+                    print("TOTAL TOKENS USED:", self.token_count)
+
+                return text
+            except Exception as e:
+                error_msg = str(e)
+                print(f"[Gem] ask: attempt {i + 1}/{self.max_try} failed: {error_msg}")
+
+                if i == self.max_try - 1:
+                    print(f"[Gem] ask: all {self.max_try} attempts failed")
+                    raise
+
+
+    def ask(self, content):
         print("================== ASK GEM ===============")
         for i in range(self.max_try):
             try:
                 response = self.client.models.generate_content(
                     model=self.model,
                     contents=content,
-                    config=config
                 )
                 text = response.text
                 print(f"[Gem] ask: success, response_length={text}")
